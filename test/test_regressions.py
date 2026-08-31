@@ -329,3 +329,108 @@ def test_escape_doc_handles_undocumented_objects():
 
     assert cli.escape_doc(Sample.documented) == "Takes a &lt;list&gt; of things."
     assert cli.escape_doc(Sample.undocumented) == ""
+
+
+def test_robots_txt_default(tmp_path):
+    website = Builder()
+
+    @website.route("/index.html")
+    def home():
+        return "hello"
+
+    website.robots()
+    website.build(dest=str(tmp_path / "site"))
+
+    robots_path = tmp_path / "site" / "robots.txt"
+    assert robots_path.is_file()
+    content = robots_path.read_text()
+    assert "User-agent: *" in content
+    assert "Allow: /" in content
+
+
+def test_robots_txt_custom_directives(tmp_path):
+    website = Builder()
+
+    @website.route("/index.html")
+    def home():
+        return "hello"
+
+    website.robots(
+        user_agents={
+            "googlebot": {
+                "disallow": ["/private/", "/tmp/"],
+                "crawl_delay": 10,
+            },
+            "*": {
+                "allow": ["/"],
+                "disallow": ["/admin/"],
+            },
+        },
+        sitemap="https://example.com/sitemap.xml",
+    )
+    website.build(dest=str(tmp_path / "site"))
+
+    content = (tmp_path / "site" / "robots.txt").read_text()
+    assert "User-agent: googlebot" in content
+    assert "Disallow: /private/" in content
+    assert "Disallow: /tmp/" in content
+    assert "Crawl-delay: 10" in content
+    assert "User-agent: *" in content
+    assert "Allow: /" in content
+    assert "Disallow: /admin/" in content
+    assert "Sitemap: https://example.com/sitemap.xml" in content
+
+
+def test_robots_txt_staging_environment(tmp_path):
+    website = Builder()
+
+    @website.route("/index.html")
+    def home():
+        return "hello"
+
+    website.robots(environment="staging")
+    website.build(dest=str(tmp_path / "site"))
+
+    content = (tmp_path / "site" / "robots.txt").read_text()
+    assert content == "User-agent: *\nDisallow: /\n"
+
+
+def test_robots_txt_development_environment(tmp_path):
+    website = Builder()
+
+    @website.route("/index.html")
+    def home():
+        return "hello"
+
+    website.robots(environment="development")
+    website.build(dest=str(tmp_path / "site"))
+
+    content = (tmp_path / "site" / "robots.txt").read_text()
+    assert content == "User-agent: *\nDisallow: /\n"
+
+
+def test_no_robots_txt_without_calling_robots(tmp_path):
+    website = Builder()
+
+    @website.route("/index.html")
+    def home():
+        return "hello"
+
+    website.build(dest=str(tmp_path / "site"))
+
+    assert not (tmp_path / "site" / "robots.txt").exists()
+
+
+def test_robots_txt_with_sitemap_only(tmp_path):
+    website = Builder()
+
+    @website.route("/index.html")
+    def home():
+        return "hello"
+
+    website.robots(sitemap="https://example.com/sitemap.xml")
+    website.build(dest=str(tmp_path / "site"))
+
+    content = (tmp_path / "site" / "robots.txt").read_text()
+    assert "User-agent: *" in content
+    assert "Sitemap: https://example.com/sitemap.xml" in content
