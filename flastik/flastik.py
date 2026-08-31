@@ -110,6 +110,7 @@ class Builder:
         self.web_pages = {}
         self.routes = []
         self.current_route = None
+        self._robots_config = None
         # - Register as the current Builder
         Builder.instance.append(self)
         # - Backend attributes
@@ -368,6 +369,66 @@ class Builder:
         log.debug("relative path: %s", relative_path)
         return relative_path
 
+    def robots(
+        self,
+        user_agents=None,
+        sitemap=None,
+        environment=None,
+    ):
+        if user_agents is None:
+            user_agents = {"*": {"allow": ["/"]}}
+
+        self._robots_config = {
+            "user_agents": user_agents,
+            "sitemap": sitemap,
+            "environment": environment,
+        }
+
+    def _generate_robots_txt(self):
+        if self._robots_config is None:
+            return
+
+        config = self._robots_config
+        env = config.get("environment")
+
+        if env == "development" or env == "staging":
+            lines = ["User-agent: *", "Disallow: /"]
+            robots_content = "\n".join(lines) + "\n"
+            robots_path = os.path.join(self.dest, "robots.txt")
+            with open(robots_path, "w") as f:
+                f.write(robots_content)
+            os.chmod(robots_path, self.html_umask)
+            log.info("Generated robots.txt (environment=%s)", env)
+            return
+
+        lines = []
+        user_agents = config.get("user_agents", {})
+        for ua, directives in user_agents.items():
+            lines.append(f"User-agent: {ua}")
+            if isinstance(directives, dict):
+                if "crawl_delay" in directives:
+                    lines.append(f"Crawl-delay: {directives['crawl_delay']}")
+                for path in directives.get("disallow", []):
+                    lines.append(f"Disallow: {path}")
+                for path in directives.get("allow", []):
+                    lines.append(f"Allow: {path}")
+            lines.append("")
+
+        sitemap = config.get("sitemap")
+        if sitemap:
+            lines.append(f"Sitemap: {sitemap}")
+            lines.append("")
+
+        robots_content = "\n".join(lines)
+        if not robots_content.endswith("\n"):
+            robots_content += "\n"
+
+        robots_path = os.path.join(self.dest, "robots.txt")
+        with open(robots_path, "w") as f:
+            f.write(robots_content)
+        os.chmod(robots_path, self.html_umask)
+        log.info("Generated robots.txt")
+
     def build(
         self,
         dest=None,
@@ -563,6 +624,8 @@ class Builder:
                         self._report_progress(done, total)
         finally:
             Builder._rendering = previously_rendering
+
+        self._generate_robots_txt()
 
     @staticmethod
     def _report_progress(done, total, width=30):
